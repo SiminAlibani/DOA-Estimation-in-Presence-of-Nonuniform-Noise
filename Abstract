@@ -1,0 +1,10 @@
+In the most of DOA estimation methods, environmental noise model is considered as uniform spatial white noise and DOA estimation is done based on this assumption. In these types of models, it is assumed that the noise power is equal in the array elements.
+However, this environmental noise model is not always uniform spatial white and the other types of noise such as nonuniform spatial white noise and uniform spatial colored noise are also common models. Non-equal output noise powers ofarray elements that cause
+nonuniform noise is one of these cases. Given the nonuniform spatial white noise model, the available DOA estimation methods can no longer be used, because in this case the signal and noise subspaces are not separable and using DOA estimation methods in this
+condition can cause a significant error in the system. Therefore, the noise covariance matrix needs to be estimated in some way or the nonuniformity noise effect is somehow eliminated from the array covariance matrix and then the DOA estimation process is performed.
+Hence, in this thesis we study, investigate and simulate methods that try to eliminate the nonuniformity noise effect and increase the accuracy of the DOA estimation with this consideration. The most important goal of this thesis is the investigation of DOA estimation
+in presence of nonuniform noise. The study of novel methods such as low rank matrix completion that has applications in many fields is one goal of this thesis. Study and investigation of the new matrix completion method and several iteration-based DOA estimation
+methods and introducing a new algorithm with less complexity for DOA estimation in presence of nonuniform white noise, are different part of this thesis. Simulations are used to study and compare the performance of these DOA estimation methods.
+
+Keywords:
+Direction of Arrival Estimation, Low Rank Matrix Completion, Nonuniform Noise, Subspace Based DOA Estimation.
