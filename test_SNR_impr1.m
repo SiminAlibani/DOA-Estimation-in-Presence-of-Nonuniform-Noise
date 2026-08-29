@@ -1,0 +1,246 @@
+clear
+close all
+clc
+
+tic
+M=8; % Number of elements of the array
+SNR_db=-10:2:15;
+SNR=10.^(SNR_db/10);
+No_MntCrl=100;
+for l=1:length(SNR)
+    Qv=diag([6.0,2.0,0.5,2.5,3.0,1.0,5.5,10.0]);
+    suminvQv=sum(1./diag(Qv));
+    sigmasq=(M/suminvQv)*SNR(l).*ones(1,2);
+    %sigmasq=[.1 .1]; %Vecor of source powers. Power of noise is equal to 1.
+    %(Note that these values are not in dB. They are absolute values)
+    sumS1=0;
+    sumS2=0;
+    sumS3=0;
+    sumS_IMLSE=0;
+    sumS_ILSSE=0;
+    %************************************************************************
+    %************ Initialization ********************************************
+    degsais=[-3 6];
+    psais=degsais*pi/180;
+    %psais=[10 20 60 -70]*pi/180; %Vecor of source direcions
+    
+    %sigmasq=[.1 .1]; %Vecor of source powers. Power of noise is equal to 1.
+    %(Note that these values are not in dB. They are absolute values)
+    scnum=length(psais); %Number of sources
+    
+    ns=500; %Number of snapshots of array output that are generated and used
+    %in estimating spatial correlation matrix R
+    c=1500; %Wave velocity
+    freq=29900; %Frequency that the beampatterns are obtained for it. Note that
+    %this frequency must be very close to fc. In fact
+    %(M-1)*abs(freq-fc)/fc must be very smaller than one. Otherwise,
+    %the computed beampattern will not be correct.
+    fc=30000; % Center frequency of the narrowband signal
+    d=c/(2*fc); %Distance between adjacent elements of the array
+    cors=0; % The correlation coefficient between the signals of the first two
+    % sources will be equal to "cors". Note that cors must be in the
+    % interval [-1,1].
+    
+    %*************************************************************************
+    %********************* Data Generation ***********************************
+    smt=zeros(M,ns);% Matrix containing sum of source signals in the output of array
+    ss=zeros(scnum,ns);% Matrix containing source signals in the origin of coordinates
+    pmt=zeros(scnum,M);% Matrix of steering vectors of sources
+    for ii=1:scnum
+        tmp1=1i*2*pi*fc*d*(sin(psais(ii)))/c;
+        tmp2=1i*2*pi*fc*d*(cos(psais(ii)))/c;
+        for jj=1:M
+            pmt(ii,jj)= exp((jj-1)*tmp1);%Steering vector of the ii'th source
+            pmt_dot(ii,jj)=(tmp2)*(jj-1)*exp((jj-1)*tmp1);
+        end
+    end
+    %% CRB_Stochastic
+    A=pmt.'; % Steering Matrix
+    A_tild=(Qv)^(-0.5)*A;
+    D=pmt_dot.'; % A_diff
+    D_tild=(Qv)^(-0.5)*D;
+    % Projection of A_tild
+    proj_A_tild=A_tild*(inv(A_tild'*A_tild))*A_tild';
+    ortg_proj=eye(M)-proj_A_tild;
+    P=diag(sigmasq);
+    R=A*P*A'+Qv;
+    R_tild=(Qv)^(-0.5)*R*(Qv)^(-0.5);
+    M_CRB=2*real(((inv(R_tild)*A_tild*P).').*(D_tild'*ortg_proj));
+    T_CRB=inv(conj(inv(R_tild)).*inv(R_tild)-((conj(proj_A_tild*inv(R_tild))).*(proj_A_tild*inv(R_tild))));
+    CRB_stoc(:,:,l)=(1/ns)*inv(2*real((P*A_tild'*inv(R_tild)*A_tild*P).*...
+                    (D_tild'*ortg_proj*inv(R_tild)*D_tild).')-M_CRB*T_CRB*M_CRB.');
+    
+    for cnt=1:No_MntCrl
+        smt=zeros(M,ns);% Matrix containing sum of source signals in the output of array
+        ss=zeros(scnum,ns);% Matrix containing source signals in the origin of coordinates
+        if (cors==0)||(scnum==1)
+            for ii=1:scnum
+                ss(ii,:)=sqrt(sigmasq(ii))*sqrt(1/2)*(randn(1,ns)+1i*randn(1,ns));
+                % Note that random('Normal',0,1,1,ns) can be used in place of
+                % randn(1,ns)
+                smt=smt+(pmt(ii,:)).'*ss(ii,:);
+            end
+        else
+            alpha=sqrt(abs(cors));
+            beta=sign(cors)*sqrt(abs(cors));
+            v1=sqrt(1/2)*(randn(1,ns)+1i*randn(1,ns));
+            v2=sqrt(1/2)*(randn(1,ns)+1i*randn(1,ns));
+            v3=sqrt(1/2)*(randn(1,ns)+1i*randn(1,ns));
+            ss(1,:)=sqrt(sigmasq(1))*(sqrt(1-alpha^2)*v1+alpha*v3);
+            smt=smt+(pmt(1,:)).'*ss(1,:);
+            ss(2,:)=sqrt(sigmasq(2))*(sqrt(1-beta^2)*v2+beta*v3);
+            smt=smt+(pmt(2,:)).'*ss(2,:);
+            if scnum>2
+                for ii=3:scnum
+                    ss(ii,:)=sqrt(sigmasq(ii))*sqrt(1/2)*(randn(1,ns)+1i*randn(1,ns));
+                    smt=smt+(pmt(ii,:)).'*ss(ii,:);
+                end
+            end
+        end
+        
+        
+        scm=(ss*ss')/ns;% Estimating signal covariance matrix
+        nsemt=zeros(M,ns);% Matrix of noise in the outputs of array elements
+        
+        nsemt=sqrt(1/2)*sqrt(Qv)*(randn(M,ns)+1i*randn(M,ns)); % In this case the additive
+        % noise of sensors will have complex Gaussian distribution
+        % Note that random('Normal',0,1,M,ns) can be used in place of randn(M,ns)
+        %nsemt=sqrt(1/2)*(random('unif',-1,1,M,ns)+1i*random('unif',-1,1,M,ns));
+        xmt=smt+nsemt;% Adding noise to the outputs of array elements (sensors)
+        
+        R=(xmt*xmt')/ns;% Estimating output covariance matrix
+        
+        
+        %*************************************************************************
+        %*********************    SDP solution ***********************************
+        u=diag(ones(M^2,1));
+        k=0:M-1;v=(M+1)*k+1;
+        u(v,:)=[];
+        J=u;
+        e = 5;
+        cvx_begin quiet
+        variable R0(M,M) hermitian semidefinite
+        minimize( trace(R0 ) )
+        subject to
+        norm(J*reshape(R0-R,M^2,1),2)<= e
+        cvx_end
+        
+        %*************************************************************************
+        %********************* Music Algorithm ***********************************
+        %% Traditional Method
+        [Vn1,Dn1]=eigs(R,M-scnum,'sr');
+        
+%         %% IMLSE Method
+%         Q_IMLSE=inv(diag(diag(inv(R)))); % initial value for Nonuniform Covariance Matrix
+%         epst=0.0001; % Error Threshold
+%         k=0;
+%         LL=[];
+%         while (1)
+%             R_hat_tild_IMLSE=Q_IMLSE^(-0.5)*R*Q_IMLSE^(-0.5); % Improved Array Covariance Matix
+%             [Uv_ML,Sv_ML]=eigs(R_hat_tild_IMLSE,scnum,'lr'); % Eigen Value Decomposition
+%             [Un_ML,Sn_ML]=eigs(R_hat_tild_IMLSE,M-scnum,'sr');
+%             B_new_IMLSE=Q_IMLSE^(0.5)* Uv_ML*(Sv_ML-eye(scnum,scnum))^(0.5);% B Matrix for DOA Estimation
+%             k=k+1;
+%             LL(k)=log10(det(Q_IMLSE))+trace(R_hat_tild_IMLSE)+scnum-sum(diag(Sv_ML)-log10(diag(Sv_ML)));% Likelihood Function
+%             Q_IMLSE=diag(diag(R-B_new_IMLSE*B_new_IMLSE'));
+%             if k>1
+%                 if abs(LL(k)-LL(k-1))<=epst
+%                     break;
+%                 end
+%             end
+%             
+%         end
+%         %% ILSSE Method
+%         Q_ILSSE=inv(diag(diag(inv(R)))); % initial value for Nonuniform Covariance Matrix
+%         epst=0.0001; % Error Threshold
+%         k=0;
+%         f=[];
+%         while (1)
+%             R_hat_tild_ILSSE=R-Q_ILSSE; % Improved Array Covariance Matix
+%             [Uv_LS,Sv_LS]=eigs(R_hat_tild_ILSSE,scnum,'lr'); % Eigen Value Decomposition
+%             [Un_LS,Sn_LS]=eigs(R_hat_tild_ILSSE,M-scnum,'sr'); % Eigen Value Decomposition
+%             B_new_ILSSE=Uv_LS*Sv_LS^(0.5);% B Matrix for DOA Estimation
+%             Sigma=Sv_LS'*Sv_LS;
+%             k=k+1;  
+%             f(k)=trace(R^2+Q_ILSSE^2-2*Q_ILSSE*R)-trace(Sigma^2);
+%             Q_ILSSE=diag(diag(R-B_new_ILSSE*B_new_ILSSE'));
+%             if k>1
+%                 if abs(f(k)-f(k-1))<=epst
+%                     break;
+%                 end
+%             end    
+%         end
+%         %% Matrix Completion
+%         [Vn2,Dn2]=eigs(R0,M-scnum,'sr');
+        
+        %% Proposed Method
+        u1=diag(ones(M^2,1));
+        k1=0:M-1;v1=(M+1)*k1+1;
+        u1(v1,:)=0;
+        J1=u1;
+        Rv=J1*reshape(R,M^2,1);
+        R_Pr=reshape(Rv,M,M)+min(diag(R))*eye(M);
+        [Vn3,Dn3]=eigs(R_Pr,M-scnum,'sr');
+
+        %% DOA Estimation
+        si=-90:0.1:90;
+        cnt1=0; cnt2=0; cnt3=0; %cnt4=0; cnt5=0;
+        for t=1:length(si)
+            tmp1=1i*2*pi*fc*d*(sin(si(t)*pi/180))/c;
+            for jj=1:M
+                stv(jj,1)= exp((jj-1)*tmp1);%Steering vector of the ii'th source
+            end
+            %a_hat_tild_IMLSE=Q_IMLSE^(-0.5)*stv;
+            S1(t)=1/norm(Vn1'*stv,2)^2;
+           % S2(t)=1/norm(Vn2'*stv,2)^2;
+            S3(t)=1/norm(Vn3'*stv,2)^2;
+            if (t>2 && t<length(si))
+                if (10*log10(S1(t-1))>10*log10(S1(t-2))&& 10*log10(S1(t-1))>10*log10(S1(t)) && 10*log10(S3(t-1))>-10)
+                    cnt1=cnt1+1;
+                    logS1_max(cnt1)=10*log10(S1(t-1));
+                    degS1(cnt1)=si(t-1);
+                end
+                if (10*log10(S3(t-1))>10*log10(S3(t-2))&& 10*log10(S3(t-1))>10*log10(S3(t)) && 10*log10(S3(t-1))>0)
+                    cnt3=cnt3+1;
+                    logS3_max(cnt3)=10*log10(S3(t-1));
+                    degS3(cnt3)=si(t-1);
+                end
+            end
+        end
+        [logS1_sort,IndS1]=sort(logS1_max,'descend');
+        degS1_sort=sort(degS1(IndS1(1:2)));
+        [logS3_sort,IndS3]=sort(logS3_max,'descend');
+        degS3_sort=sort(degS3(IndS3(1:2)));
+        
+        sumS1=(sum((degsais-degS1_sort(1:2)).^2)/scnum)+sumS1;
+        sumS3=(sum((degsais-degS3_sort(1:2)).^2)/scnum)+sumS3;
+        cnt
+    end
+    RMSES1(l)=sqrt(sumS1/No_MntCrl);
+%     RMSES2(l)=sqrt(sumS2/No_MntCrl);
+    RMSES3(l)=sqrt(sumS3/No_MntCrl);
+%     RMSES_IMLSE(l)=sqrt(sumS_IMLSE/No_MntCrl);
+%     RMSES_ILSSE(l)=sqrt(sumS_ILSSE/No_MntCrl);
+    l
+end
+for t=1:length(SNR)
+    CRB_stoc1(t)=(CRB_stoc(1,1,t));
+end
+for t=1:length(SNR)
+    CRB_stoc2(t)=(CRB_stoc(2,2,t));
+end
+CRB_stocf=sqrt((CRB_stoc1+CRB_stoc2)/scnum)*(180/pi);
+semilogy(SNR_db,CRB_stocf,'Color',[0.1 1 0.2],'LineWidth',1.25)
+hold on
+plot(SNR_db,RMSES1,'--sr','LineWidth',1.25)
+%plot(SNR_db,RMSES2,'--*b','LineWidth',1.25)
+plot(SNR_db,RMSES3,'-om','LineWidth',1.25)
+% plot(SNR_db,RMSES_IMLSE,'LineStyle','-','Marker','>','Color',[0.9 0.3 0.1],'LineWidth',1.25)
+% plot(SNR_db,RMSES_ILSSE,'LineStyle','-.','Marker','h','Color',[0.1 0.5 0.4],'LineWidth',1.25)
+axis([-10 15 0 50])
+title({'RMSEs(deg.^{\bullet}) of DOA estimation versus SNR';'No of Iteration:500, Sourse Degree:[-3 6]'...
+      ;'Correlation Coefficient=0'})
+% legend('CRB','Traditional MUSIC','Matrix Completion Method','Proposed Method','IMLSE','ILSSE')
+xlabel('SNR(dB)'); ylabel('DOA RMSE(Deg.)');
+grid on
+toc
