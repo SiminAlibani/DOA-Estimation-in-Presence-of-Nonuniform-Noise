@@ -1,10 +1,12 @@
-# This folder includes:
+# This Repository includes Code, Docs, and Results Folders:
+
+## Docs Folder contains:
 - Final Thesis
 - Published Papers
 - Other related and used documents
 
   
-# Different methods are implemented including : 
+## Different Implemented methods are in Code Folder and they are : 
 - Matrix Completion
 - IMLSE
 - ILSSE
